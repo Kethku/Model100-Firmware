@@ -25,7 +25,7 @@
 #include "Kaleidoscope-TapDance.h"
 
 
-enum { QWERTY, STENO, FUNCTION }; // layers
+enum { QWERTY, GAMING, FUNCTION }; // layers
 
 enum { LEFT_BRACKET, RIGHT_BRACKET }; // tapdance
 
@@ -50,23 +50,23 @@ KEYMAPS(
    XXX,               Key_N, Key_M, Key_Comma, Key_Period,    Key_Slash,     XXX,
 
    Key_RightAlt, Key_Enter, Key_Spacebar, Key_RightGui,
-   XXX),
+   ShiftToLayer(FUNCTION)),
 
-  [STENO] =  KEYMAP_STACKED
-  (XXX,          Key_1, Key_2, Key_3, Key_4, Key_5, Key_Equals,
-   Key_Tab,      S(N1), S(N9), S(N3), S(N4), S(N5), S(ST1),
-   Key_Escape,   S(S1), S(TL), S(PL), S(HL), S(ST1),
-   Key_Backtick, S(S2), S(KL), S(WL), S(RL), S(ST2), S(ST2),
+  [GAMING] = KEYMAP_STACKED
+  (___, ___, ___, ___, ___, ___, ___,
+   ___, ___, ___, ___, ___, ___, ___,
+   ___, ___, ___, ___, ___, ___,
+   ___, ___, ___, ___, ___, ___, ___,
 
-   S(RE1), S(A), S(O), XXX,
-   ___,
+   ___, Key_Space, ___, ___,
+   XXX,
 
-   Key_Minus, Key_6,  Key_7, Key_8, Key_9, Key_0, XXX,
-   S(ST3),    S(N8),  S(N9), S(NA), S(NB), S(NC), XXX,
-              S(ST3), S(FR), S(PR), S(LR), S(TR), S(DR),
-   S(ST4),    S(ST4), S(RR), S(BR), S(GR), S(SR), S(ZR),
+   ___, ___, ___, ___, ___, ___, ___,
+   ___, ___, ___, ___, ___, ___, ___,
+        ___, ___, ___, ___, ___, ___,
+   ___, ___, ___, ___, ___, ___, ___,
 
-   XXX, S(E), S(U), S(RE2),
+   ___, ___, Key_Backspace, ___,
    ___),
 
   [FUNCTION] =  KEYMAP_STACKED
@@ -146,20 +146,28 @@ void tapDanceAction(uint8_t tap_dance_index, KeyAddr key_addr, uint8_t tap_count
   }
 }
 
-enum { SWITCH_TO_STENO };
+enum { SWITCH_TO_GAMING, REBOOT_TO_BOOTLOADER };
 
-void switchToSteno(uint8_t combo_index) {
-  if (Layer.isActive(STENO)) {
-    Layer.deactivate(STENO);
+void switchToGaming(uint8_t combo_index) {
+  if (Layer.isActive(GAMING)) {
+    Layer.deactivate(GAMING);
   } else {
-    Layer.activate(STENO);
+    Layer.activate(GAMING);
   }
 }
 
+void rebootToBootloader(uint8_t combo_index) {
+  Kaleidoscope.rebootBootloader();
+}
+
 USE_MAGIC_COMBOS(
-  [SWITCH_TO_STENO] = {
-    .action = switchToSteno,
+  [SWITCH_TO_GAMING] = {
+    .action = switchToGaming,
     .keys = {R3C6, R3C9}
+  },
+  [REBOOT_TO_BOOTLOADER] = {
+    .action = rebootToBootloader,
+    .keys = {R0C0, R0C15}
   }
 );
 
@@ -171,7 +179,7 @@ class FDEscape : public kaleidoscope::Plugin {
     FDEscape() {}
     
     EventHandlerResult onKeyswitchEvent(KeyEvent &event) {
-      if (Layer.isActive(QWERTY) && !Layer.isActive(STENO) && !Layer.isActive(FUNCTION) && !keyIsInjected(event.state)) {
+      if (Layer.isActive(QWERTY) && !Layer.isActive(GAMING) && !Layer.isActive(FUNCTION) && !keyIsInjected(event.state)) {
         if (keyToggledOn(event.state)) {
           if (event.addr == KeyAddr(2, 4)) {
             start_time = Kaleidoscope.millisAtCycleStart();
@@ -256,30 +264,64 @@ class LEDStatus : public Plugin {
     EventHandlerResult afterEachCycle() {
       cRGB alert_color = CRGB(0, 0, 0);
       bool draw = true;
-      if (Layer.isActive(STENO)) {
-        cleaned = false;
-        alert_color = CRGB(0, 255, 0);
-    #if KALEIDOSCOPE_HIDADAPTOR_ENABLE_KEYBOARD_BOOT_PROTOCOL
-      } else if (BootKeyboard.getProtocol() != initialProtocol) {
-        cleaned = false;
-        alert_color = CRGB(255, 0, 0);
-    #endif
-      } else if (Layer.isActive(FUNCTION)) {
-        cleaned = false;
+      if (Layer.isActive(FUNCTION)) {
         alert_color = CRGB(255, 255, 255);
-      } else if (!cleaned) {
-        cleaned = true;
+      } else if (Layer.isActive(GAMING)) {
+        alert_color = hsvToRgb(247, 95, 245);
       } else {
         draw = false;
       }
 
       if (draw) {
-        LEDControl::set_all_leds_to(alert_color);
+        for (int i = 0; i < 16; i++) {
+          if (i != 7 && i != 8) { // Zero row and 7/8 col are thumb keys
+            LEDControl::setCrgbAt(KeyAddr(0, i), alert_color);
+          }
+        }
       }
     }
-  private:
-    bool cleaned = true;
-    uint8_t initialProtocol = BootKeyboard.getProtocol();
+};
+
+class Trans : public StalkerEffect::ColorComputer {
+ public:
+  Trans() {}
+
+  cRGB compute(uint8_t *rev_step) {
+    if (*rev_step > 0)
+      *rev_step -= 1;
+    else
+      *rev_step = 0;
+
+    uint8_t step = 255 - *rev_step;
+
+    // Define transition points in HSV
+    struct HSV {
+        uint8_t h, s, v;
+    };
+
+    const HSV colors[] = {
+        {138, 95, 253}, // Light Blue
+        {247, 95, 245}, // Pink
+        {247, 0, 255},     // White
+        {247, 95, 245}, // Pink
+        {138, 95, 253},  // Light Blue
+        {247, 0, 0}     // Black
+    };
+
+    const int num_colors = (sizeof(colors) / sizeof(colors[0])) - 1;
+    int segment = (step * num_colors) / 256; // Determine which segment we're in
+    float t = ((step * num_colors) % 256) / 256.0f; // Interpolation factor
+
+    HSV c1 = colors[segment];
+    HSV c2 = colors[segment + 1];
+
+    // Interpolate each HSV component
+    uint8_t h = c1.h + (c2.h - c1.h) * t;
+    uint8_t s = c1.s + (c2.s - c1.s) * t;
+    uint8_t v = c1.v + (c2.v - c1.v) * t;
+
+    return hsvToRgb(h, s, v);
+  }
 };
 
 
@@ -288,6 +330,7 @@ class LEDStatus : public Plugin {
 
 kaleidoscope::plugin::FDEscape FDEscape;
 kaleidoscope::plugin::LEDStatus LEDStatus;
+kaleidoscope::plugin::Trans Trans;
 
 
 // First, tell Kaleidoscope which plugins you want to use.
@@ -297,7 +340,7 @@ KALEIDOSCOPE_INIT_PLUGINS(
   // Plugin for communicating with the os over the serial port
   Focus,
 
-   FDEscape,
+  FDEscape,
 
   // LED plugins
   LEDControl,
@@ -323,15 +366,15 @@ KALEIDOSCOPE_INIT_PLUGINS(
   // comfortable - or able - to do automatically, but can be useful
   // nevertheless. Such as toggling the key report protocol between Boot (used
   // by BIOSes) and Report (NKRO).
-  USBQuirks,
+  USBQuirks
 
   // Steno
-  GeminiPR
+  // GeminiPR
 );
 
 void setup() {
   Kaleidoscope.setup();
-  StalkerEffect.variant = STALKER(Rainbow);
+  StalkerEffect.variant = &Trans;
   StalkerEffect.activate();
 }
 
